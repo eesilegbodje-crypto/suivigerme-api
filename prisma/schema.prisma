@@ -88,6 +88,8 @@ model EvaluationABF {
   reponses        Json     // { [idQuestion]: indexOptionChoisie (0 à 3) }
   besoinsDomaines String[] @default([])
   besoinsAutre    String?
+  diagnosticIa       Json?     // dernier diagnostic généré par l'IA (voir src/lib/aiService.js)
+  diagnosticGenereLe DateTime? // quand ce diagnostic a été généré (null = jamais)
   creeLe          DateTime @default(now())
 
   @@index([participantId])
