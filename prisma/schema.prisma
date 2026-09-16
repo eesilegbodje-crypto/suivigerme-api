@@ -1,0 +1,73 @@
+// Schéma de base de données de SuiviGERME.
+// Point de départ (étape 1 du projet) : les participants suivis et les sessions de formation
+// GERME auxquelles ils prennent part. Les outils GERME (calcul de coût, plan d'affaires...) et
+// le questionnaire d'évaluation seront ajoutés dans les étapes suivantes.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// Un compte permettant de se connecter à la plateforme (coordonnateur ou conseiller).
+model User {
+  id         String   @id @default(cuid())
+  nom        String
+  email      String   @unique
+  motDePasse String
+  role       String   @default("coordonnateur") // "coordonnateur" | "conseiller"
+  creeLe     DateTime @default(now())
+}
+
+// Une personne (entrepreneur ou responsable de PME) suivie par le programme.
+model Participant {
+  id              String   @id @default(cuid())
+  nom             String
+  telephone       String?
+  email           String?
+  localite        String?
+  nomEntreprise   String?
+  secteurActivite String?
+  statut          String   @default("Actif") // "Actif" | "Sorti" | "Abandon"
+  notes           String?
+  creeLe          DateTime @default(now())
+  majLe           DateTime @updatedAt
+
+  participations ParticipationFormation[]
+
+  @@index([statut])
+}
+
+// Une session de formation GERME donnée à un groupe de participants.
+model Formation {
+  id        String   @id @default(cuid())
+  module    String   // voir la liste des modules dans src/lib/modulesGerme.js
+  date      DateTime
+  lieu      String?
+  formateur String?
+  notes     String?
+  creeLe    DateTime @default(now())
+
+  participations ParticipationFormation[]
+
+  @@index([module])
+  @@index([date])
+}
+
+// Table de liaison : qui a participé à quelle formation, et comment ça s'est passé pour lui.
+model ParticipationFormation {
+  id            String   @id @default(cuid())
+  participantId String
+  participant   Participant @relation(fields: [participantId], references: [id], onDelete: Cascade)
+  formationId   String
+  formation     Formation   @relation(fields: [formationId], references: [id], onDelete: Cascade)
+  present       Boolean  @default(true)
+  appreciation  String?  // note libre sur l'assiduité ou la progression de ce participant
+  creeLe        DateTime @default(now())
+
+  @@unique([participantId, formationId])
+}
