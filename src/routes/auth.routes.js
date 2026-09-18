@@ -26,6 +26,10 @@ router.post("/login", limiteurConnexion, async (req, res) => {
       return res.status(401).json({ error: "Email ou mot de passe incorrect." });
     }
 
+    if (user.suspendu) {
+      return res.status(403).json({ error: "Ce compte a été suspendu. Contactez votre coordonnateur." });
+    }
+
     const token = jwt.sign(
       { userId: user.id, nom: user.nom, role: user.role },
       process.env.JWT_SECRET,
@@ -86,7 +90,7 @@ router.post("/utilisateurs", authenticate, authorize("coordonnateur"), async (re
 router.get("/utilisateurs", authenticate, authorize("coordonnateur"), async (req, res) => {
   try {
     const utilisateurs = await prisma.user.findMany({
-      select: { id: true, nom: true, email: true, role: true, creeLe: true },
+      select: { id: true, nom: true, email: true, role: true, creeLe: true, suspendu: true },
       orderBy: { creeLe: "asc" },
     });
     res.json(utilisateurs);
@@ -164,6 +168,85 @@ router.patch("/utilisateurs/:id/reinitialiser-mot-de-passe", authenticate, autho
     });
 
     res.json({ message: "Mot de passe reinitialise." });
+  } catch (erreur) {
+    console.error(erreur);
+    res.status(500).json({ error: "Erreur serveur." });
+  }
+});
+
+// Supprime definitivement un compte — reserve au coordonnateur. Bloque la suppression si le
+// compte a deja enregistre au moins une PME ou une formation (pour ne jamais perdre de donnees
+// par erreur) : il faut d'abord transferer/vider ses donnees, ou simplement le laisser inactif.
+// Un coordonnateur ne peut pas se supprimer lui-meme (eviterait de se retrouver bloque dehors).
+// Suspend un compte — reserve au coordonnateur. La personne ne peut plus se connecter, et si
+// elle avait deja une session ouverte, elle est coupee des sa prochaine action (verifie par le
+// middleware authenticate). Ses donnees ne sont jamais touchees. Un coordonnateur ne peut pas se
+// suspendre lui-meme (eviterait de se retrouver bloque dehors).
+router.patch("/utilisateurs/:id/suspendre", authenticate, authorize("coordonnateur"), async (req, res) => {
+  try {
+    if (req.params.id === req.user.userId) {
+      return res.status(400).json({ error: "Vous ne pouvez pas suspendre votre propre compte." });
+    }
+
+    const cible = await prisma.user.findUnique({ where: { id: req.params.id } });
+    if (!cible) {
+      return res.status(404).json({ error: "Compte introuvable." });
+    }
+
+    await prisma.user.update({ where: { id: cible.id }, data: { suspendu: true } });
+
+    res.json({ message: "Compte suspendu." });
+  } catch (erreur) {
+    console.error(erreur);
+    res.status(500).json({ error: "Erreur serveur." });
+  }
+});
+
+// Reactive un compte precedemment suspendu — reserve au coordonnateur.
+router.patch("/utilisateurs/:id/reactiver", authenticate, authorize("coordonnateur"), async (req, res) => {
+  try {
+    const cible = await prisma.user.findUnique({ where: { id: req.params.id } });
+    if (!cible) {
+      return res.status(404).json({ error: "Compte introuvable." });
+    }
+
+    await prisma.user.update({ where: { id: cible.id }, data: { suspendu: false } });
+
+    res.json({ message: "Compte reactive." });
+  } catch (erreur) {
+    console.error(erreur);
+    res.status(500).json({ error: "Erreur serveur." });
+  }
+});
+
+router.delete("/utilisateurs/:id", authenticate, authorize("coordonnateur"), async (req, res) => {
+  try {
+    if (req.params.id === req.user.userId) {
+      return res.status(400).json({ error: "Vous ne pouvez pas supprimer votre propre compte." });
+    }
+
+    const cible = await prisma.user.findUnique({ where: { id: req.params.id } });
+    if (!cible) {
+      return res.status(404).json({ error: "Compte introuvable." });
+    }
+
+    const [nombreParticipants, nombreFormations] = await Promise.all([
+      prisma.participant.count({ where: { creeParId: cible.id } }),
+      prisma.formation.count({ where: { creeParId: cible.id } }),
+    ]);
+
+    if (nombreParticipants > 0 || nombreFormations > 0) {
+      return res.status(400).json({
+        error:
+          `Impossible de supprimer ce compte : il a deja enregistre ${nombreParticipants} PME et ` +
+          `${nombreFormations} formation(s). Ses donnees doivent d'abord etre reprises par un autre ` +
+          `compte, ou conservees telles quelles, avant de pouvoir le supprimer.`,
+      });
+    }
+
+    await prisma.user.delete({ where: { id: cible.id } });
+
+    res.json({ message: "Compte supprime." });
   } catch (erreur) {
     console.error(erreur);
     res.status(500).json({ error: "Erreur serveur." });

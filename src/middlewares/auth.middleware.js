@@ -1,8 +1,11 @@
 const jwt = require("jsonwebtoken");
+const prisma = require("../lib/prisma");
 
-// Vérifie qu'un token de connexion (JWT) valide est présent dans la requête.
-// S'il est valide, on ajoute les infos de l'utilisateur (req.user) pour la suite.
-function authenticate(req, res, next) {
+// Vérifie qu'un token de connexion (JWT) valide est présent dans la requête, ET que le compte
+// n'a pas été suspendu depuis (une suspension doit couper l'accès immédiatement, même si la
+// personne avait déjà une session ouverte — d'où cette vérification en base à chaque requête,
+// et pas seulement au moment de la connexion).
+async function authenticate(req, res, next) {
   const enTete = req.headers.authorization;
 
   if (!enTete || !enTete.startsWith("Bearer ")) {
@@ -13,6 +16,18 @@ function authenticate(req, res, next) {
 
   try {
     req.user = jwt.verify(token, process.env.JWT_SECRET); // contient userId, nom, role
+
+    const utilisateur = await prisma.user.findUnique({
+      where: { id: req.user.userId },
+      select: { suspendu: true },
+    });
+    if (!utilisateur) {
+      return res.status(401).json({ error: "Session invalide ou expirée." });
+    }
+    if (utilisateur.suspendu) {
+      return res.status(403).json({ error: "Ce compte a été suspendu. Contactez votre coordonnateur." });
+    }
+
     next();
   } catch (erreur) {
     return res.status(401).json({ error: "Session invalide ou expirée." });

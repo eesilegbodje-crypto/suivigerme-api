@@ -27,6 +27,13 @@ model User {
   // definir un nouveau des sa prochaine connexion, avant de pouvoir utiliser le reste de l'appli.
   doitChangerMotDePasse Boolean @default(false)
 
+  // Un compte suspendu par le coordonnateur ne peut plus se connecter (nouvelle tentative
+  // refusee), et si une session etait deja ouverte au moment de la suspension, elle est coupee
+  // immediatement (verifie a chaque requete authentifiee, pas seulement a la connexion).
+  // Ses donnees (PME, formations...) restent intactes et redeviennent accessibles des la
+  // reactivation par le coordonnateur.
+  suspendu Boolean @default(false)
+
   // Chaque compte est totalement independant : il ne voit et ne modifie que les PME et
   // formations qu'il a lui-meme creees (aucun partage entre consultants, meme le coordonnateur).
   participants Participant[]
