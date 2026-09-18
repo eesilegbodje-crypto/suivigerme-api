@@ -5,6 +5,7 @@ const authRoutes = require("./src/routes/auth.routes");
 const participantsRoutes = require("./src/routes/participants.routes");
 const formationsRoutes = require("./src/routes/formations.routes");
 const abfRoutes = require("./src/routes/abf.routes");
+const suiviEvaluationRoutes = require("./src/routes/suiviEvaluation.routes");
 
 const app = express();
 
@@ -43,6 +44,7 @@ app.use("/auth", authRoutes);
 app.use("/participants", participantsRoutes);
 app.use("/formations", formationsRoutes);
 app.use("/abf", abfRoutes);
+app.use("/suivi-evaluation", suiviEvaluationRoutes);
 
 // Route inconnue : réponse claire plutôt qu'une erreur silencieuse.
 app.use((req, res) => {
