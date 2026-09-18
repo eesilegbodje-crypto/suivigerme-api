@@ -7,6 +7,22 @@ const router = express.Router();
 
 router.use(authenticate);
 
+// Chaque compte est independant : verifie, pour TOUTE route de ce fichier qui contient :id, que
+// la formation existe ET appartient bien au compte connecte (meme principe que sur les PME).
+router.param("id", async (req, res, next, id) => {
+  try {
+    const formation = await prisma.formation.findUnique({ where: { id } });
+    if (!formation || formation.creeParId !== req.user.userId) {
+      return res.status(404).json({ error: "Formation introuvable." });
+    }
+    req.formation = formation;
+    next();
+  } catch (erreur) {
+    console.error(erreur);
+    res.status(500).json({ error: "Erreur serveur." });
+  }
+});
+
 // Liste des modules GERME disponibles (pour remplir les menus déroulants du formulaire).
 router.get("/modules", (req, res) => {
   res.json(MODULES_GERME);
@@ -17,7 +33,7 @@ router.get("/", async (req, res) => {
   try {
     const { module: moduleId } = req.query;
 
-    const ou = {};
+    const ou = { creeParId: req.user.userId };
     if (moduleId) {
       ou.module = moduleId;
     }
@@ -78,6 +94,7 @@ router.post("/", async (req, res) => {
         lieu: lieu || null,
         formateur: formateur || null,
         notes: notes || null,
+        creeParId: req.user.userId,
       },
     });
 
@@ -144,14 +161,8 @@ router.post("/:id/participants", async (req, res) => {
       return res.status(400).json({ error: "Le participant est obligatoire." });
     }
 
-    const [formation, participant] = await Promise.all([
-      prisma.formation.findUnique({ where: { id: req.params.id } }),
-      prisma.participant.findUnique({ where: { id: participantId } }),
-    ]);
-    if (!formation) {
-      return res.status(404).json({ error: "Formation introuvable." });
-    }
-    if (!participant) {
+    const participant = await prisma.participant.findUnique({ where: { id: participantId } });
+    if (!participant || participant.creeParId !== req.user.userId) {
       return res.status(404).json({ error: "Participant introuvable." });
     }
 
@@ -180,20 +191,23 @@ router.put("/:id/participants/:participationId", async (req, res) => {
   try {
     const { present, appreciation } = req.body;
 
-    const inscription = await prisma.participationFormation.update({
-      where: { id: req.params.participationId },
+    const { count } = await prisma.participationFormation.updateMany({
+      where: { id: req.params.participationId, formationId: req.params.id },
       data: {
         ...(present !== undefined ? { present: Boolean(present) } : {}),
         ...(appreciation !== undefined ? { appreciation: appreciation || null } : {}),
       },
-      include: { participant: true },
     });
-
-    res.json(inscription);
-  } catch (erreur) {
-    if (erreur.code === "P2025") {
+    if (count === 0) {
       return res.status(404).json({ error: "Inscription introuvable." });
     }
+
+    const inscription = await prisma.participationFormation.findUnique({
+      where: { id: req.params.participationId },
+      include: { participant: true },
+    });
+    res.json(inscription);
+  } catch (erreur) {
     console.error(erreur);
     res.status(500).json({ error: "Erreur serveur." });
   }
@@ -202,12 +216,14 @@ router.put("/:id/participants/:participationId", async (req, res) => {
 // Retire un participant de cette session de formation.
 router.delete("/:id/participants/:participationId", async (req, res) => {
   try {
-    await prisma.participationFormation.delete({ where: { id: req.params.participationId } });
-    res.status(204).end();
-  } catch (erreur) {
-    if (erreur.code === "P2025") {
+    const { count } = await prisma.participationFormation.deleteMany({
+      where: { id: req.params.participationId, formationId: req.params.id },
+    });
+    if (count === 0) {
       return res.status(404).json({ error: "Inscription introuvable." });
     }
+    res.status(204).end();
+  } catch (erreur) {
     console.error(erreur);
     res.status(500).json({ error: "Erreur serveur." });
   }

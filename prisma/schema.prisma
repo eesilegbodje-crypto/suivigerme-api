@@ -21,6 +21,11 @@ model User {
   motDePasse String
   role       String   @default("coordonnateur") // "coordonnateur" | "conseiller"
   creeLe     DateTime @default(now())
+
+  // Chaque compte est totalement independant : il ne voit et ne modifie que les PME et
+  // formations qu'il a lui-meme creees (aucun partage entre consultants, meme le coordonnateur).
+  participants Participant[]
+  formations   Formation[]
 }
 
 // Une personne (entrepreneur ou responsable de PME) suivie par le programme.
@@ -34,14 +39,27 @@ model Participant {
   secteurActivite String?
   statut          String   @default("Actif") // "Actif" | "Sorti" | "Abandon"
   notes           String?
+  // Le consultant (compte) qui a enregistre cette PME. Optionnel dans le schema uniquement pour
+  // permettre le rattachement des PME creees avant l'existence de ce champ (voir migration) ;
+  // en pratique, toujours renseigne des la creation.
+  creeParId       String?
+  creePar         User?    @relation(fields: [creeParId], references: [id])
+  // Diagnostic IA transversal de la PME (ABF + finances + accompagnement, pas seulement l'ABF).
+  // Jamais recalcule automatiquement : uniquement quand le consultant clique sur "Regenerer".
+  diagnosticGlobalIa       Json?
+  diagnosticGlobalGenereLe DateTime?
   creeLe          DateTime @default(now())
   majLe           DateTime @updatedAt
 
   participations ParticipationFormation[]
   evaluationsAbf EvaluationABF[]
   notesSuivi     NoteSuivi[]
+  relevesMensuels  ReleveMensuel[]
+  estimationsCouts EstimationCout[]
+  actionsAccompagnement ActionAccompagnement[]
 
   @@index([statut])
+  @@index([creeParId])
 }
 
 // Une session de formation GERME donnée à un groupe de participants.
@@ -52,12 +70,16 @@ model Formation {
   lieu      String?
   formateur String?
   notes     String?
+  // Le consultant (compte) qui a organise cette session (voir note equivalente sur Participant).
+  creeParId String?
+  creePar   User?    @relation(fields: [creeParId], references: [id])
   creeLe    DateTime @default(now())
 
   participations ParticipationFormation[]
 
   @@index([module])
   @@index([date])
+  @@index([creeParId])
 }
 
 // Table de liaison : qui a participé à quelle formation, et comment ça s'est passé pour lui.
@@ -92,6 +114,8 @@ model EvaluationABF {
   diagnosticGenereLe DateTime? // quand ce diagnostic a été généré (null = jamais)
   creeLe          DateTime @default(now())
 
+  actionsAccompagnement ActionAccompagnement[]
+
   @@index([participantId])
 }
 
@@ -106,4 +130,79 @@ model NoteSuivi {
   creeLe        DateTime @default(now())
 
   @@index([participantId])
+}
+
+
+// Un relevé mensuel simplifié de l'activité d'un participant (Tenue des registres) : les chiffres
+// du mois + un état des lieux de la rigueur avec laquelle il tient ses registres. Le bénéfice net
+// n'est PAS stocké : il est recalculé à chaque lecture (voir src/lib/calculsFinanciers.js).
+model ReleveMensuel {
+  id              String   @id @default(cuid())
+  participantId   String
+  participant     Participant @relation(fields: [participantId], references: [id], onDelete: Cascade)
+  mois            DateTime // toujours le 1er jour du mois concerné
+  ventesTotales   Float
+  achatsTotaux    Float
+  depenses        Float
+  registreVentes    Boolean @default(false)
+  registreAchats    Boolean @default(false)
+  registreCaisse    Boolean @default(false)
+  registreCreances  Boolean @default(false)
+  registreActifs    Boolean @default(false)
+  notes           String?
+  creeLe          DateTime @default(now())
+
+  @@unique([participantId, mois])
+  @@index([participantId])
+}
+
+// Une fiche de calcul du prix de revient pour un produit ou service d'un participant (Estimation
+// des coûts). Coût total, coût unitaire et prix de vente conseillé sont recalculés à chaque
+// lecture, jamais stockés (voir src/lib/calculsFinanciers.js).
+model EstimationCout {
+  id                String   @id @default(cuid())
+  participantId     String
+  participant       Participant @relation(fields: [participantId], references: [id], onDelete: Cascade)
+  nomProduit        String
+  dateEstimation    DateTime
+  coutMatieres      Float
+  coutMainOeuvre    Float
+  fraisGeneraux     Float
+  quantiteProduite  Float
+  margeSouhaitee    Float @default(30)
+  notes             String?
+  creeLe            DateTime @default(now())
+
+  @@index([participantId])
+}
+
+// Une action du plan d'accompagnement : pour un probleme identifie chez le participant (souvent
+// via l'ABF), l'action a mener, qui en est responsable, pour quand, et son statut d'avancement.
+// La note de verification permet de documenter en texte que l'action a bien ete realisee (les
+// pieces jointes photo/document pourront etre ajoutees dans une version ulterieure).
+model ActionAccompagnement {
+  id               String   @id @default(cuid())
+  participantId    String
+  participant      Participant @relation(fields: [participantId], references: [id], onDelete: Cascade)
+  probleme         String
+  action           String
+  // Une formation GERME a suivre en complement de l'action ci-dessus : un meme probleme peut
+  // appeler a la fois une action concrete ET une formation, les deux ne s'excluent pas. Optionnel ;
+  // identifiant de module parmi ceux de src/lib/modulesGerme.js.
+  formationLiee    String?
+  responsable      String
+  echeance         DateTime
+  statut           String   @default("À faire") // "À faire" | "En cours" | "Réalisée" | "Partiellement réalisée" | "Abandonnée"
+  noteVerification String?
+  // D'où vient ce problème : diagnostic IA d'une évaluation ABF, ou observation directe du
+  // consultant sur le terrain (sans lien avec l'ABF). evaluationAbfId est optionnel et repassé à
+  // null si l'évaluation source est supprimée plus tard (l'action elle-même n'est jamais perdue).
+  origine          String   @default("Observation") // "ABF" | "IA_globale" | "Observation"
+  evaluationAbfId  String?
+  evaluationAbf    EvaluationABF? @relation(fields: [evaluationAbfId], references: [id], onDelete: SetNull)
+  creeLe           DateTime @default(now())
+  majLe            DateTime @updatedAt
+
+  @@index([participantId])
+  @@index([evaluationAbfId])
 }

@@ -4,11 +4,12 @@ const jwt = require("jsonwebtoken");
 const prisma = require("../lib/prisma");
 const validerMotDePasse = require("../lib/passwordPolicy");
 const { authenticate, authorize } = require("../middlewares/auth.middleware");
+const { limiteurConnexion } = require("../middlewares/rateLimit.middleware");
 
 const router = express.Router();
 
 // Connexion : vérifie l'email + mot de passe, renvoie un token de session (JWT).
-router.post("/login", async (req, res) => {
+router.post("/login", limiteurConnexion, async (req, res) => {
   try {
     const { email, motDePasse } = req.body;
     if (!email || !motDePasse) {

@@ -261,6 +261,201 @@ const QUESTIONNAIRE_ABF = [
       },
     ],
   },
+  // ------------------------------------------------------------------------
+  // Rubriques "Diagnostic PME 360" (18/09/2026) : ajoutees directement ici, dans le meme
+  // questionnaire que les modules GERME ci-dessus, pour rester un seul instrument uniforme.
+  // Ne couvrent QUE les domaines non deja traites par une rubrique existante (Commercial est deja
+  // couvert par "marketing", Production par "achats_stock", RH par "personnel_productivite").
+  // ------------------------------------------------------------------------
+  {
+    rubriqueId: "gouvernance",
+    titre: "Gouvernance et organisation",
+    questions: [
+      {
+        id: "gouvernance_1",
+        texte: "Les rôles et responsabilités de chaque personne dans l'entreprise sont-ils clairement définis ?",
+        options: [
+          "Oui, chacun connaît précisément son rôle",
+          "Partiellement, certains rôles restent flous",
+          "Non, les rôles ne sont pas définis",
+          "Aucune information sur le sujet",
+        ],
+      },
+      {
+        id: "gouvernance_2",
+        texte:
+          "Les tâches importantes de l'entreprise (production, ventes, paiements) suivent-elles des façons de faire écrites ou bien établies, suivies par tous ?",
+        options: [
+          "Oui, des procédures claires sont suivies par tous",
+          "En partie, seulement pour certaines tâches",
+          "Non, chacun fait à sa manière",
+          "Aucune information sur le sujet",
+        ],
+      },
+      {
+        id: "gouvernance_3",
+        texte: "En cas d'absence du dirigeant, une autre personne peut-elle prendre le relais sans que l'activité s'arrête ?",
+        options: [
+          "Oui, une autre personne peut prendre le relais",
+          "Difficilement, certaines décisions doivent attendre son retour",
+          "Non, l'activité s'arrête en son absence",
+          "Aucune information sur le sujet",
+        ],
+      },
+    ],
+  },
+  {
+    rubriqueId: "finance_tresorerie",
+    titre: "Finance et trésorerie",
+    questions: [
+      {
+        id: "finance_tresorerie_1",
+        texte: "Savez-vous à tout moment combien d'argent l'entreprise a réellement en caisse et en banque ?",
+        options: [
+          "Oui, le solde est suivi et connu en permanence",
+          "Approximativement, sans suivi rigoureux",
+          "Non, ce n'est pas suivi",
+          "Aucune information sur le sujet",
+        ],
+      },
+      {
+        id: "finance_tresorerie_2",
+        texte:
+          "Les dettes de l'entreprise (fournisseurs, prêts) et les créances (argent dû par les clients) sont-elles suivies et maîtrisées ?",
+        options: [
+          "Oui, elles sont suivies et maîtrisées",
+          "Suivies partiellement",
+          "Non, elles ne sont pas suivies",
+          "Aucune information sur le sujet",
+        ],
+      },
+      {
+        id: "finance_tresorerie_3",
+        texte:
+          "Savez-vous si l'entreprise est réellement rentable (le chiffre d'affaires couvre-t-il toutes les charges avec une marge) ?",
+        options: [
+          "Oui, la rentabilité est calculée régulièrement",
+          "Approximativement, sans calcul précis",
+          "Non, ce n'est pas su",
+          "Aucune information sur le sujet",
+        ],
+      },
+    ],
+  },
+  {
+    rubriqueId: "juridique_fiscal",
+    titre: "Juridique, fiscal et conformité",
+    questions: [
+      {
+        id: "juridique_fiscal_1",
+        texte: "L'entreprise est-elle immatriculée au Registre du Commerce et du Crédit Mobilier (RCCM) ?",
+        options: [
+          "Oui, l'immatriculation est à jour",
+          "En cours de régularisation",
+          "Non, elle n'est pas immatriculée",
+          "Aucune information sur le sujet",
+        ],
+      },
+      {
+        id: "juridique_fiscal_2",
+        texte: "La situation fiscale de l'entreprise (déclarations, paiements d'impôts) est-elle à jour ?",
+        options: [
+          "Oui, à jour",
+          "Partiellement, avec du retard sur certains points",
+          "Non, pas à jour",
+          "Aucune information sur le sujet",
+        ],
+      },
+      {
+        id: "juridique_fiscal_3",
+        texte:
+          "Les relations importantes de l'entreprise (clients, fournisseurs, employés) sont-elles couvertes par des contrats ou assurances écrits ?",
+        options: [
+          "Oui, systématiquement",
+          "Seulement pour certaines relations",
+          "Non, tout repose sur des accords oraux",
+          "Aucune information sur le sujet",
+        ],
+      },
+    ],
+  },
+  {
+    rubriqueId: "numerique_cybersecurite",
+    titre: "Numérique et cybersécurité",
+    questions: [
+      {
+        id: "numerique_cybersecurite_1",
+        texte:
+          "L'entreprise utilise-t-elle des outils numériques pour se faire connaître ou vendre (réseaux sociaux, WhatsApp Business, mobile money, site internet) ?",
+        options: [
+          "Oui, plusieurs outils numériques sont utilisés activement",
+          "Un peu, de façon occasionnelle",
+          "Non, aucun outil numérique n'est utilisé",
+          "Aucune information sur le sujet",
+        ],
+      },
+      {
+        id: "numerique_cybersecurite_2",
+        texte:
+          "L'entreprise utilise-t-elle des outils numériques pour gérer son activité (comptabilité, stocks, paiements), plutôt que uniquement du papier ?",
+        options: [
+          "Oui, régulièrement",
+          "Partiellement, en complément du papier",
+          "Non, tout est géré sur papier",
+          "Aucune information sur le sujet",
+        ],
+      },
+      {
+        id: "numerique_cybersecurite_3",
+        texte:
+          "Les informations importantes de l'entreprise (mots de passe, données clients, documents financiers) sont-elles protégées contre la perte ou le vol ?",
+        options: [
+          "Oui, des précautions sont prises (sauvegardes, mots de passe protégés)",
+          "Partiellement",
+          "Non, aucune précaution particulière",
+          "Aucune information sur le sujet",
+        ],
+      },
+    ],
+  },
+  {
+    rubriqueId: "risques_resilience",
+    titre: "Risques et résilience",
+    questions: [
+      {
+        id: "risques_resilience_1",
+        texte:
+          "L'entrepreneur a-t-il identifié les principaux risques qui pourraient menacer son activité (perte d'un client clé, hausse des prix, incendie, etc.) ?",
+        options: [
+          "Oui, les principaux risques sont identifiés",
+          "Vaguement, sans les avoir formalisés",
+          "Non, ils n'ont pas été identifiés",
+          "Aucune information sur le sujet",
+        ],
+      },
+      {
+        id: "risques_resilience_2",
+        texte: "Si un de ces risques se réalisait, l'entreprise a-t-elle des solutions prévues (réserve financière, autre fournisseur, etc.) ?",
+        options: [
+          "Oui, des solutions sont prévues",
+          "Partiellement",
+          "Non, rien n'est prévu",
+          "Aucune information sur le sujet",
+        ],
+      },
+      {
+        id: "risques_resilience_3",
+        texte:
+          "L'activité de l'entreprise est-elle bien répartie entre plusieurs clients et fournisseurs plutôt que dépendante d'un seul ?",
+        options: [
+          "Oui, bien répartie entre plusieurs clients/fournisseurs",
+          "Partiellement répartie, avec une dépendance modérée",
+          "Non, fortement dépendante d'un seul client ou fournisseur",
+          "Aucune information sur le sujet",
+        ],
+      },
+    ],
+  },
 ];
 
 // Domaines proposés à la question finale "quels domaines nécessitent une formation ?" — reprend
@@ -272,10 +467,20 @@ const DOMAINES_BESOIN_FORMATION = MODULES_GERME.filter((m) => m.id !== "entrepri
 // Prisma) pour rester simple à faire évoluer, mais le frontend ne propose que ces deux choix.
 const MOMENTS_ABF = ["Avant formation", "Après formation"];
 
-// Calcule, pour chaque rubrique, un niveau indicatif (Bon / Moyen / Faible / Non renseigné) à
-// partir des réponses données. Objectif : donner un repère visuel rapide pour comparer un "avant"
-// et un "après" — ce n'est pas un barème officiel GERME, juste une aide de lecture.
+// Calcule, pour chaque rubrique, un niveau de maturité indicatif de 1 (Prioritaire) à 5
+// (Structuré) à partir des réponses données, avec son libellé. Objectif : donner un repère visuel
+// rapide pour comparer un "avant" et un "après", et construire la cartographie des besoins sur
+// l'ensemble des rubriques (modules GERME + diagnostic d'entreprise) — ce n'est pas un barème
+// officiel GERME, juste une aide de lecture.
 // reponses : objet { [idQuestion]: indexOptionChoisie } (0 à 3).
+const LIBELLES_NIVEAU = {
+  1: "Prioritaire",
+  2: "À renforcer",
+  3: "À consolider",
+  4: "Solide",
+  5: "Structuré",
+};
+
 function calculerNiveauxAbf(reponses) {
   const niveaux = {};
 
@@ -291,14 +496,19 @@ function calculerNiveauxAbf(reponses) {
     }
 
     if (points.length === 0) {
-      niveaux[rubrique.rubriqueId] = "Non renseigné";
+      niveaux[rubrique.rubriqueId] = { niveau: null, libelle: "Non renseigné" };
       continue;
     }
 
     const moyenne = points.reduce((a, b) => a + b, 0) / points.length;
-    if (moyenne >= 1.5) niveaux[rubrique.rubriqueId] = "Bon";
-    else if (moyenne >= 0.75) niveaux[rubrique.rubriqueId] = "Moyen";
-    else niveaux[rubrique.rubriqueId] = "Faible";
+    let niveau;
+    if (moyenne >= 1.75) niveau = 5;
+    else if (moyenne >= 1.25) niveau = 4;
+    else if (moyenne >= 0.75) niveau = 3;
+    else if (moyenne >= 0.25) niveau = 2;
+    else niveau = 1;
+
+    niveaux[rubrique.rubriqueId] = { niveau, libelle: LIBELLES_NIVEAU[niveau] };
   }
 
   return niveaux;
