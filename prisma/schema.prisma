@@ -40,6 +40,27 @@ model User {
   formations   Formation[]
 }
 
+// Journal des evenements de securite (connexions, actions sensibles sur les comptes) — visible
+// uniquement par le coordonnateur, dans le module Securite. Ecrit au fil de l'eau a partir de
+// maintenant (aucun historique avant la creation de ce modele). Email/nom sont dupliques ici
+// plutot que lies par relation, pour que l'historique reste lisible meme si le compte concerne
+// est supprime plus tard.
+model JournalSecurite {
+  id            String   @id @default(cuid())
+  type          String   // voir la liste des types dans src/lib/journalSecurite.js
+  emailConcerne String
+  nomConcerne   String?
+  // Qui a realise l'action (un coordonnateur) ; absent si l'evenement vient du compte concerne
+  // lui-meme (connexion, changement volontaire de mot de passe...).
+  acteurNom     String?
+  details       String?
+  dateEvenement DateTime @default(now())
+
+  @@index([type])
+  @@index([dateEvenement])
+  @@index([emailConcerne])
+}
+
 // Une personne (entrepreneur ou responsable de PME) suivie par le programme.
 model Participant {
   id              String   @id @default(cuid())

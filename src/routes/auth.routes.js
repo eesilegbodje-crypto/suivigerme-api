@@ -5,6 +5,7 @@ const prisma = require("../lib/prisma");
 const validerMotDePasse = require("../lib/passwordPolicy");
 const { authenticate, authorize } = require("../middlewares/auth.middleware");
 const { limiteurConnexion } = require("../middlewares/rateLimit.middleware");
+const { TYPES_EVENEMENT, enregistrerEvenementSecurite } = require("../lib/journalSecurite");
 
 const router = express.Router();
 
@@ -18,15 +19,32 @@ router.post("/login", limiteurConnexion, async (req, res) => {
 
     const user = await prisma.user.findUnique({ where: { email } });
     if (!user) {
+      await enregistrerEvenementSecurite({
+        type: TYPES_EVENEMENT.CONNEXION_ECHOUEE,
+        emailConcerne: email,
+        details: "Email inconnu",
+      });
       return res.status(401).json({ error: "Email ou mot de passe incorrect." });
     }
 
     const motDePasseValide = await bcrypt.compare(motDePasse, user.motDePasse);
     if (!motDePasseValide) {
+      await enregistrerEvenementSecurite({
+        type: TYPES_EVENEMENT.CONNEXION_ECHOUEE,
+        emailConcerne: user.email,
+        nomConcerne: user.nom,
+        details: "Mot de passe incorrect",
+      });
       return res.status(401).json({ error: "Email ou mot de passe incorrect." });
     }
 
     if (user.suspendu) {
+      await enregistrerEvenementSecurite({
+        type: TYPES_EVENEMENT.CONNEXION_ECHOUEE,
+        emailConcerne: user.email,
+        nomConcerne: user.nom,
+        details: "Compte suspendu",
+      });
       return res.status(403).json({ error: "Ce compte a été suspendu. Contactez votre coordonnateur." });
     }
 
@@ -35,6 +53,12 @@ router.post("/login", limiteurConnexion, async (req, res) => {
       process.env.JWT_SECRET,
       { expiresIn: "7d" }
     );
+
+    await enregistrerEvenementSecurite({
+      type: TYPES_EVENEMENT.CONNEXION_REUSSIE,
+      emailConcerne: user.email,
+      nomConcerne: user.nom,
+    });
 
     res.json({
       token,
@@ -77,6 +101,13 @@ router.post("/utilisateurs", authenticate, authorize("coordonnateur"), async (re
         role: role === "coordonnateur" ? "coordonnateur" : "conseiller",
         doitChangerMotDePasse: true,
       },
+    });
+
+    await enregistrerEvenementSecurite({
+      type: TYPES_EVENEMENT.COMPTE_CREE,
+      emailConcerne: user.email,
+      nomConcerne: user.nom,
+      acteurNom: req.user.nom,
     });
 
     res.status(201).json({ id: user.id, nom: user.nom, email: user.email, role: user.role });
@@ -127,10 +158,20 @@ router.patch("/changer-mot-de-passe", authenticate, async (req, res) => {
       return res.status(400).json({ error: erreurPolitique });
     }
 
+    const etaitObligatoire = utilisateur.doitChangerMotDePasse;
     const nouveauMotDePasseChiffre = await bcrypt.hash(nouveauMotDePasse, 10);
     await prisma.user.update({
       where: { id: utilisateur.id },
       data: { motDePasse: nouveauMotDePasseChiffre, doitChangerMotDePasse: false },
+    });
+
+    await enregistrerEvenementSecurite({
+      type: TYPES_EVENEMENT.MOT_DE_PASSE_CHANGE,
+      emailConcerne: utilisateur.email,
+      nomConcerne: utilisateur.nom,
+      details: etaitObligatoire
+        ? "Changement obligatoire (première connexion ou après réinitialisation)"
+        : "Changement volontaire",
     });
 
     res.json({ message: "Mot de passe mis a jour." });
@@ -167,6 +208,13 @@ router.patch("/utilisateurs/:id/reinitialiser-mot-de-passe", authenticate, autho
       data: { motDePasse: motDePasseChiffre, doitChangerMotDePasse: true },
     });
 
+    await enregistrerEvenementSecurite({
+      type: TYPES_EVENEMENT.MOT_DE_PASSE_REINITIALISE,
+      emailConcerne: cible.email,
+      nomConcerne: cible.nom,
+      acteurNom: req.user.nom,
+    });
+
     res.json({ message: "Mot de passe reinitialise." });
   } catch (erreur) {
     console.error(erreur);
@@ -195,6 +243,13 @@ router.patch("/utilisateurs/:id/suspendre", authenticate, authorize("coordonnate
 
     await prisma.user.update({ where: { id: cible.id }, data: { suspendu: true } });
 
+    await enregistrerEvenementSecurite({
+      type: TYPES_EVENEMENT.COMPTE_SUSPENDU,
+      emailConcerne: cible.email,
+      nomConcerne: cible.nom,
+      acteurNom: req.user.nom,
+    });
+
     res.json({ message: "Compte suspendu." });
   } catch (erreur) {
     console.error(erreur);
@@ -211,6 +266,13 @@ router.patch("/utilisateurs/:id/reactiver", authenticate, authorize("coordonnate
     }
 
     await prisma.user.update({ where: { id: cible.id }, data: { suspendu: false } });
+
+    await enregistrerEvenementSecurite({
+      type: TYPES_EVENEMENT.COMPTE_REACTIVE,
+      emailConcerne: cible.email,
+      nomConcerne: cible.nom,
+      acteurNom: req.user.nom,
+    });
 
     res.json({ message: "Compte reactive." });
   } catch (erreur) {
@@ -245,6 +307,13 @@ router.delete("/utilisateurs/:id", authenticate, authorize("coordonnateur"), asy
     }
 
     await prisma.user.delete({ where: { id: cible.id } });
+
+    await enregistrerEvenementSecurite({
+      type: TYPES_EVENEMENT.COMPTE_SUPPRIME,
+      emailConcerne: cible.email,
+      nomConcerne: cible.nom,
+      acteurNom: req.user.nom,
+    });
 
     res.json({ message: "Compte supprime." });
   } catch (erreur) {
