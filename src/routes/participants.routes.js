@@ -1,7 +1,11 @@
 const express = require("express");
 const prisma = require("../lib/prisma");
 const { authenticate } = require("../middlewares/auth.middleware");
-const { QUESTIONNAIRE_ABF, MOMENTS_ABF, DOMAINES_BESOIN_FORMATION, calculerNiveauxAbf } = require("../lib/questionnaireAbf");
+const { MOMENTS_ABF, calculerNiveauxAbf } = require("../lib/questionnaireAbf");
+const { obtenirQuestionnaireAbf, TYPES_SUIVI_VALIDES } = require("../lib/abfParTypeSuivi");
+const { filieresPourTypeSuivi } = require("../lib/filieresParTypeSuivi");
+const { FICHES_TECHNIQUES_AGRICULTURE } = require("../lib/fichesTechniquesAgriculture");
+const { FICHES_PROPHYLAXIE_ELEVAGE } = require("../lib/fichesProphylaxieElevage");
 const { genererJSON } = require("../lib/aiService");
 const { calculerBeneficeReleve, calculerEstimationCout } = require("../lib/calculsFinanciers");
 const { calculerSanteParticipant } = require("../lib/santeParticipant");
@@ -47,14 +51,36 @@ function emailValide(email) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
 
+// Vérifie la cohérence typeSuivi/filiere : un type "Generique" n'a pas de filière (toujours
+// ramenée à null), et un type Agriculture/Elevage doit avoir une filière valide parmi celles
+// proposées pour ce type (voir filieresParTypeSuivi.js). Retourne soit { ok: true, filiere }, soit
+// { ok: false, erreur } pour renvoyer directement un message clair à l'écran.
+function validerTypeSuiviEtFiliere(typeSuivi, filiere) {
+  const type = typeSuivi || "Generique";
+  if (!TYPES_SUIVI_VALIDES.includes(type)) {
+    return { ok: false, erreur: "Type de suivi inconnu." };
+  }
+  if (type === "Generique") {
+    return { ok: true, typeSuivi: type, filiere: null };
+  }
+  const filieresValides = filieresPourTypeSuivi(type).map((f) => f.id);
+  if (!filiere || !filieresValides.includes(filiere)) {
+    return { ok: false, erreur: "Merci de choisir une filière valide pour ce type de suivi." };
+  }
+  return { ok: true, typeSuivi: type, filiere };
+}
+
 // Liste des participants, avec le nombre de formations suivies.
 router.get("/", async (req, res) => {
   try {
-    const { recherche, statut } = req.query;
+    const { recherche, statut, typeSuivi } = req.query;
 
     const ou = { creeParId: req.user.userId };
     if (statut) {
       ou.statut = statut;
+    }
+    if (typeSuivi) {
+      ou.typeSuivi = typeSuivi;
     }
     if (recherche) {
       ou.OR = [
@@ -163,7 +189,8 @@ router.get("/:id", async (req, res) => {
 // Création d'un participant.
 router.post("/", async (req, res) => {
   try {
-    const { nom, telephone, email, localite, nomEntreprise, secteurActivite, statut, notes } = req.body;
+    const { nom, telephone, email, localite, nomEntreprise, secteurActivite, statut, notes, typeSuivi, filiere } =
+      req.body;
 
     if (!nom || !nom.trim()) {
       return res.status(400).json({ error: "Le nom est obligatoire." });
@@ -173,6 +200,10 @@ router.post("/", async (req, res) => {
     }
     if (email && !emailValide(email)) {
       return res.status(400).json({ error: "Format d'email invalide." });
+    }
+    const validationType = validerTypeSuiviEtFiliere(typeSuivi, filiere);
+    if (!validationType.ok) {
+      return res.status(400).json({ error: validationType.erreur });
     }
 
     const participant = await prisma.participant.create({
@@ -185,6 +216,8 @@ router.post("/", async (req, res) => {
         secteurActivite: secteurActivite || null,
         statut: statut || "Actif",
         notes: notes || null,
+        typeSuivi: validationType.typeSuivi,
+        filiere: validationType.filiere,
         creeParId: req.user.userId,
       },
     });
@@ -199,7 +232,7 @@ router.post("/", async (req, res) => {
 // Modification d'un participant.
 router.put("/:id", async (req, res) => {
   try {
-    const { nom, telephone, email, localite, nomEntreprise, secteurActivite, statut, notes } = req.body;
+    const { nom, telephone, email, localite, nomEntreprise, secteurActivite, statut, notes, filiere } = req.body;
 
     if (!nom || !nom.trim()) {
       return res.status(400).json({ error: "Le nom est obligatoire." });
@@ -209,6 +242,13 @@ router.put("/:id", async (req, res) => {
     }
     if (email && !emailValide(email)) {
       return res.status(400).json({ error: "Format d'email invalide." });
+    }
+    // Le type de suivi (Generique/Agriculture/Elevage) n'est jamais modifiable après la création
+    // (changerait le questionnaire ABF applicable aux évaluations déjà enregistrées) : on ne
+    // revalide/renouvelle que la filière, dans le type de suivi déjà fixé pour ce participant.
+    const validationType = validerTypeSuiviEtFiliere(req.participant.typeSuivi, filiere);
+    if (!validationType.ok) {
+      return res.status(400).json({ error: validationType.erreur });
     }
 
     const participant = await prisma.participant.update({
@@ -222,6 +262,7 @@ router.put("/:id", async (req, res) => {
         secteurActivite: secteurActivite || null,
         statut: statut || "Actif",
         notes: notes || null,
+        filiere: validationType.filiere,
       },
     });
 
@@ -253,19 +294,19 @@ router.delete("/:id", async (req, res) => {
 // Évaluations ABF (Analyse des Besoins en Formation) d'un participant
 // ------------------------------------------------------------------
 
-// Liste des identifiants de questions valides, pour vérifier les réponses envoyées.
-const IDS_QUESTIONS_ABF = QUESTIONNAIRE_ABF.flatMap((rubrique) => rubrique.questions.map((q) => q.id));
-const IDS_DOMAINES_BESOIN = DOMAINES_BESOIN_FORMATION.map((d) => d.id);
-
-// Vérifie que l'objet "reponses" envoyé ne contient que des questions connues, avec un index
-// d'option valide (0 à 3). Les questions non répondues peuvent être absentes.
-function reponsesAbfValides(reponses) {
+// Vérifie que l'objet "reponses" envoyé ne contient que des questions connues du questionnaire
+// ABF correspondant au type de suivi du participant (Generique/Agriculture/Elevage), avec un
+// index d'option valide (0 à 3). Les questions non répondues peuvent être absentes.
+function reponsesAbfValides(reponses, typeSuivi) {
   if (!reponses || typeof reponses !== "object" || Array.isArray(reponses)) {
     return false;
   }
+  const idsQuestions = obtenirQuestionnaireAbf(typeSuivi).questionnaire.flatMap((rubrique) =>
+    rubrique.questions.map((q) => q.id)
+  );
   return Object.entries(reponses).every(([idQuestion, indexChoisi]) => {
     return (
-      IDS_QUESTIONS_ABF.includes(idQuestion) &&
+      idsQuestions.includes(idQuestion) &&
       Number.isInteger(indexChoisi) &&
       indexChoisi >= 0 &&
       indexChoisi <= 3
@@ -282,7 +323,8 @@ router.get("/:id/evaluations-abf", async (req, res) => {
       orderBy: { dateEvaluation: "asc" },
     });
 
-    res.json(evaluations.map((e) => ({ ...e, niveaux: calculerNiveauxAbf(e.reponses) })));
+    const { questionnaire } = obtenirQuestionnaireAbf(req.participant.typeSuivi);
+    res.json(evaluations.map((e) => ({ ...e, niveaux: calculerNiveauxAbf(e.reponses, questionnaire) })));
   } catch (erreur) {
     console.error(erreur);
     res.status(500).json({ error: "Erreur serveur." });
@@ -293,6 +335,7 @@ router.get("/:id/evaluations-abf", async (req, res) => {
 router.post("/:id/evaluations-abf", async (req, res) => {
   try {
     const { moment, dateEvaluation, reponses, besoinsDomaines, besoinsAutre } = req.body;
+    const { questionnaire, domainesBesoinFormation } = obtenirQuestionnaireAbf(req.participant.typeSuivi);
 
     if (!moment || !MOMENTS_ABF.includes(moment)) {
       return res.status(400).json({ error: "Le moment doit être « Avant formation » ou « Après formation »." });
@@ -300,11 +343,12 @@ router.post("/:id/evaluations-abf", async (req, res) => {
     if (!dateEvaluation) {
       return res.status(400).json({ error: "La date de l'évaluation est obligatoire." });
     }
-    if (!reponsesAbfValides(reponses)) {
+    if (!reponsesAbfValides(reponses, req.participant.typeSuivi)) {
       return res.status(400).json({ error: "Les réponses envoyées ne sont pas valides." });
     }
+    const idsDomainesBesoin = domainesBesoinFormation.map((d) => d.id);
     const domaines = Array.isArray(besoinsDomaines) ? besoinsDomaines : [];
-    if (!domaines.every((d) => IDS_DOMAINES_BESOIN.includes(d))) {
+    if (!domaines.every((d) => idsDomainesBesoin.includes(d))) {
       return res.status(400).json({ error: "Un des domaines de besoin envoyés est inconnu." });
     }
 
@@ -319,7 +363,7 @@ router.post("/:id/evaluations-abf", async (req, res) => {
       },
     });
 
-    res.status(201).json({ ...evaluation, niveaux: calculerNiveauxAbf(evaluation.reponses) });
+    res.status(201).json({ ...evaluation, niveaux: calculerNiveauxAbf(evaluation.reponses, questionnaire) });
   } catch (erreur) {
     console.error(erreur);
     res.status(500).json({ error: "Erreur serveur." });
@@ -330,6 +374,7 @@ router.post("/:id/evaluations-abf", async (req, res) => {
 router.put("/:id/evaluations-abf/:evaluationId", async (req, res) => {
   try {
     const { moment, dateEvaluation, reponses, besoinsDomaines, besoinsAutre } = req.body;
+    const { questionnaire, domainesBesoinFormation } = obtenirQuestionnaireAbf(req.participant.typeSuivi);
 
     if (!moment || !MOMENTS_ABF.includes(moment)) {
       return res.status(400).json({ error: "Le moment doit être « Avant formation » ou « Après formation »." });
@@ -337,11 +382,12 @@ router.put("/:id/evaluations-abf/:evaluationId", async (req, res) => {
     if (!dateEvaluation) {
       return res.status(400).json({ error: "La date de l'évaluation est obligatoire." });
     }
-    if (!reponsesAbfValides(reponses)) {
+    if (!reponsesAbfValides(reponses, req.participant.typeSuivi)) {
       return res.status(400).json({ error: "Les réponses envoyées ne sont pas valides." });
     }
+    const idsDomainesBesoin = domainesBesoinFormation.map((d) => d.id);
     const domaines = Array.isArray(besoinsDomaines) ? besoinsDomaines : [];
-    if (!domaines.every((d) => IDS_DOMAINES_BESOIN.includes(d))) {
+    if (!domaines.every((d) => idsDomainesBesoin.includes(d))) {
       return res.status(400).json({ error: "Un des domaines de besoin envoyés est inconnu." });
     }
 
@@ -360,7 +406,7 @@ router.put("/:id/evaluations-abf/:evaluationId", async (req, res) => {
     }
 
     const evaluation = await prisma.evaluationABF.findUnique({ where: { id: req.params.evaluationId } });
-    res.json({ ...evaluation, niveaux: calculerNiveauxAbf(evaluation.reponses) });
+    res.json({ ...evaluation, niveaux: calculerNiveauxAbf(evaluation.reponses, questionnaire) });
   } catch (erreur) {
     console.error(erreur);
     res.status(500).json({ error: "Erreur serveur." });
@@ -369,8 +415,8 @@ router.put("/:id/evaluations-abf/:evaluationId", async (req, res) => {
 
 // Construit, pour un diagnostic IA lisible, le texte des réponses d'une évaluation, rubrique par
 // rubrique (question posée + texte de la réponse choisie, pas seulement l'index).
-function texteReponsesAbf(reponses) {
-  return QUESTIONNAIRE_ABF.map((rubrique) => {
+function texteReponsesAbf(reponses, questionnaire) {
+  return questionnaire.map((rubrique) => {
     const lignes = rubrique.questions.map((question) => {
       const indexChoisi = reponses ? reponses[question.id] : undefined;
       const reponseTexte =
@@ -407,7 +453,8 @@ router.post("/:id/diagnostic-global-ia", async (req, res) => {
 
     let texteAbf = "Aucune évaluation ABF enregistrée pour cette PME.";
     if (derniereEvaluation) {
-      const niveaux = calculerNiveauxAbf(derniereEvaluation.reponses);
+      const { questionnaire: questionnaireDuParticipant } = obtenirQuestionnaireAbf(req.participant.typeSuivi);
+      const niveaux = calculerNiveauxAbf(derniereEvaluation.reponses, questionnaireDuParticipant);
       const lignesNiveaux = Object.entries(niveaux)
         .map(([id, n]) => `${id} : ${n.niveau ? `${n.niveau}/5 (${n.libelle})` : "non renseigné"}`)
         .join(", ");
@@ -497,12 +544,14 @@ router.get("/:id/performance", async (req, res) => {
     const evaluationsApres = evaluations.filter((e) => e.moment === "Après formation");
     const evaluationApres = evaluationsApres[evaluationsApres.length - 1];
 
+    const { questionnaire: questionnaireDuParticipant } = obtenirQuestionnaireAbf(req.participant.typeSuivi);
+
     let progressionAbf = null;
     if (evaluationAvant && evaluationApres) {
-      const niveauxAvant = calculerNiveauxAbf(evaluationAvant.reponses);
-      const niveauxApres = calculerNiveauxAbf(evaluationApres.reponses);
+      const niveauxAvant = calculerNiveauxAbf(evaluationAvant.reponses, questionnaireDuParticipant);
+      const niveauxApres = calculerNiveauxAbf(evaluationApres.reponses, questionnaireDuParticipant);
 
-      const rubriques = QUESTIONNAIRE_ABF.map((rubrique) => {
+      const rubriques = questionnaireDuParticipant.map((rubrique) => {
         const niveauAvant = niveauxAvant[rubrique.rubriqueId]?.niveau ?? null;
         const niveauApres = niveauxApres[rubrique.rubriqueId]?.niveau ?? null;
         return {
@@ -540,6 +589,29 @@ router.get("/:id/performance", async (req, res) => {
   }
 });
 
+// Fiche de référence (contenu statique, pas stocké en base) associée à la filière du
+// participant : fiche technique pour un participant Agriculture, fiche de prophylaxie pour un
+// participant Élevage. Rien à renvoyer pour un participant Générique ou sans filière renseignée.
+router.get("/:id/fiche-reference", (req, res) => {
+  const { typeSuivi, filiere } = req.participant;
+
+  if (!filiere) {
+    return res.json({ fiche: null });
+  }
+
+  if (typeSuivi === "Agriculture") {
+    const fiche = FICHES_TECHNIQUES_AGRICULTURE[filiere] || null;
+    return res.json({ type: "technique", filiere, fiche });
+  }
+
+  if (typeSuivi === "Elevage") {
+    const fiche = FICHES_PROPHYLAXIE_ELEVAGE[filiere] || null;
+    return res.json({ type: "prophylaxie", filiere, fiche });
+  }
+
+  res.json({ fiche: null });
+});
+
 // Génère (ou régénère) le diagnostic IA d'une évaluation ABF : problèmes identifiés, formations à
 // prioriser, actions correctives. Se base UNIQUEMENT sur les réponses déjà enregistrées pour
 // cette évaluation, jamais sur d'autres données du participant.
@@ -550,11 +622,14 @@ router.post("/:id/evaluations-abf/:evaluationId/diagnostic-ia", async (req, res)
       return res.status(404).json({ error: "Évaluation introuvable." });
     }
 
-    const idsModules = DOMAINES_BESOIN_FORMATION.map((d) => d.id);
+    const { questionnaire: questionnaireDuParticipant, domainesBesoinFormation } = obtenirQuestionnaireAbf(
+      req.participant.typeSuivi
+    );
+    const idsModules = domainesBesoinFormation.map((d) => d.id);
     const besoinsTexte =
       evaluation.besoinsDomaines.length > 0
         ? evaluation.besoinsDomaines
-            .map((id) => DOMAINES_BESOIN_FORMATION.find((d) => d.id === id)?.label || id)
+            .map((id) => domainesBesoinFormation.find((d) => d.id === id)?.label || id)
             .join(", ")
         : "aucun domaine coché";
 
@@ -562,7 +637,7 @@ router.post("/:id/evaluations-abf/:evaluationId/diagnostic-ia", async (req, res)
 
 Réponses détaillées par rubrique :
 
-${texteReponsesAbf(evaluation.reponses)}
+${texteReponsesAbf(evaluation.reponses, questionnaireDuParticipant)}
 
 Domaines que l'entrepreneur (ou l'agent) a lui-même identifiés comme nécessitant une formation : ${besoinsTexte}
 Autre besoin mentionné : ${evaluation.besoinsAutre || "aucun"}
@@ -593,7 +668,7 @@ Chaque liste doit contenir entre 1 et 6 éléments courts.`;
       data: { diagnosticIa, diagnosticGenereLe: new Date() },
     });
 
-    res.json({ ...evaluationMaj, niveaux: calculerNiveauxAbf(evaluationMaj.reponses) });
+    res.json({ ...evaluationMaj, niveaux: calculerNiveauxAbf(evaluationMaj.reponses, questionnaireDuParticipant) });
   } catch (erreur) {
     console.error(erreur);
     res.status(500).json({ error: "Le diagnostic IA est momentanément indisponible." });

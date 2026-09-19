@@ -71,6 +71,16 @@ model Participant {
   nomEntreprise   String?
   secteurActivite String?
   statut          String   @default("Actif") // "Actif" | "Sorti" | "Abandon"
+  // Determine quel module de suivi s'applique a cette PME : quel questionnaire ABF utiliser, et
+  // acces aux onglets specifiques (Fiche technique pour l'agriculture, Prophylaxie pour l'elevage).
+  // Distinct de "secteurActivite" ci-dessus (texte libre decrivant l'activite) : "typeSuivi" est
+  // une des 3 valeurs fixes qui pilote le comportement de l'appli. "Generique" = comportement
+  // historique, inchange. Les participants crees avant ce champ restent "Generique" par defaut,
+  // aucune migration de donnees necessaire.
+  typeSuivi       String   @default("Generique") // "Generique" | "Agriculture" | "Elevage"
+  // Filiere precise au sein du type de suivi (ex. "Mais", "Volaille"...), utilisee pour choisir la
+  // bonne fiche technique/prophylaxie. Sans objet pour le type "Generique".
+  filiere         String?
   notes           String?
   // Le consultant (compte) qui a enregistre cette PME. Optionnel dans le schema uniquement pour
   // permettre le rattachement des PME creees avant l'existence de ce champ (voir migration) ;

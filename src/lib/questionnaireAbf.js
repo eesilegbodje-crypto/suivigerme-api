@@ -481,10 +481,13 @@ const LIBELLES_NIVEAU = {
   5: "Structuré",
 };
 
-function calculerNiveauxAbf(reponses) {
+// "rubriques" est parametrable pour pouvoir reutiliser exactement le meme calcul avec les
+// questionnaires ABF Agriculture/Elevage (voir questionnaireAbfAgriculture.js et
+// questionnaireAbfElevage.js), qui n'ont pas les memes rubriques que le questionnaire generique.
+function calculerNiveauxAbf(reponses, rubriques = QUESTIONNAIRE_ABF) {
   const niveaux = {};
 
-  for (const rubrique of QUESTIONNAIRE_ABF) {
+  for (const rubrique of rubriques) {
     const points = [];
 
     for (const question of rubrique.questions) {
@@ -514,4 +517,4 @@ function calculerNiveauxAbf(reponses) {
   return niveaux;
 }
 
-module.exports = { QUESTIONNAIRE_ABF, DOMAINES_BESOIN_FORMATION, MOMENTS_ABF, calculerNiveauxAbf };
+module.exports = { QUESTIONNAIRE_ABF, DOMAINES_BESOIN_FORMATION, MOMENTS_ABF, calculerNiveauxAbf, LIBELLES_NIVEAU };

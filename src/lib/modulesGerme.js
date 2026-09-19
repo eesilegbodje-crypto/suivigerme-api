@@ -10,6 +10,26 @@ const MODULES_GERME = [
   { id: "personnel_productivite", label: "Personnel et productivité" },
   { id: "planification", label: "Planifiez pour votre entreprise" },
   { id: "tenue_registres", label: "Tenue des registres" },
+
+  // Modules ajoutés pour les participants suivis en Agriculture (voir questionnaireAbfAgriculture.js).
+  { id: "itineraire_technique", label: "Techniques culturales et itinéraire technique" },
+  { id: "gestion_eau_irrigation", label: "Gestion de l'eau et irrigation" },
+  { id: "fertilisation_sols", label: "Fertilisation et santé des sols" },
+  { id: "protection_phytosanitaire", label: "Protection phytosanitaire" },
+  { id: "recolte_post_recolte", label: "Récolte, post-récolte et stockage" },
+  { id: "commercialisation_agricole", label: "Commercialisation des produits agricoles" },
+  { id: "financement_agricole", label: "Accès au financement agricole" },
+
+  // Modules ajoutés pour les participants suivis en Élevage (voir questionnaireAbfElevage.js).
+  { id: "alimentation_elevage", label: "Alimentation et conduite de l'élevage" },
+  { id: "sante_animale_prophylaxie", label: "Santé animale et prophylaxie" },
+  { id: "reproduction_amelioration", label: "Reproduction et amélioration génétique" },
+  { id: "habitat_biosecurite", label: "Habitat et biosécurité de l'élevage" },
+  { id: "commercialisation_elevage", label: "Commercialisation des produits d'élevage" },
+  { id: "financement_elevage", label: "Accès au financement et aux intrants d'élevage" },
+
+  // Module partagé Agriculture + Élevage (thème identique dans les deux filières).
+  { id: "vie_associative_rurale", label: "Organisation en coopérative et vie associative" },
 ];
 
 module.exports = { MODULES_GERME };
