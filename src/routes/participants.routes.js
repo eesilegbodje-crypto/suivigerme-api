@@ -51,23 +51,33 @@ function emailValide(email) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
 
-// Vérifie la cohérence typeSuivi/filiere : un type "Generique" n'a pas de filière (toujours
-// ramenée à null), et un type Agriculture/Elevage doit avoir une filière valide parmi celles
-// proposées pour ce type (voir filieresParTypeSuivi.js). Retourne soit { ok: true, filiere }, soit
-// { ok: false, erreur } pour renvoyer directement un message clair à l'écran.
-function validerTypeSuiviEtFiliere(typeSuivi, filiere) {
+// Vérifie la cohérence typeSuivi/filiere/filierePrecision : un type "Generique" n'a ni filière ni
+// précision (toujours ramenées à null), un type Agriculture/Elevage doit avoir une filière valide
+// parmi celles proposées pour ce type (voir filieresParTypeSuivi.js), et la filière spéciale
+// "autre" (Agriculture uniquement pour l'instant) exige en plus une précision en texte libre
+// (la culture n'étant dans aucune fiche technique standard). Retourne soit
+// { ok: true, filiere, filierePrecision }, soit { ok: false, erreur } pour un message clair.
+function validerTypeSuiviEtFiliere(typeSuivi, filiere, filierePrecision) {
   const type = typeSuivi || "Generique";
   if (!TYPES_SUIVI_VALIDES.includes(type)) {
     return { ok: false, erreur: "Type de suivi inconnu." };
   }
   if (type === "Generique") {
-    return { ok: true, typeSuivi: type, filiere: null };
+    return { ok: true, typeSuivi: type, filiere: null, filierePrecision: null };
   }
   const filieresValides = filieresPourTypeSuivi(type).map((f) => f.id);
   if (!filiere || !filieresValides.includes(filiere)) {
     return { ok: false, erreur: "Merci de choisir une filière valide pour ce type de suivi." };
   }
-  return { ok: true, typeSuivi: type, filiere };
+  if (filiere === "autre" && !(filierePrecision || "").trim()) {
+    return { ok: false, erreur: "Merci de préciser la culture pour la filière \"Autre\"." };
+  }
+  return {
+    ok: true,
+    typeSuivi: type,
+    filiere,
+    filierePrecision: filiere === "autre" ? filierePrecision.trim() : null,
+  };
 }
 
 // Liste des participants, avec le nombre de formations suivies.
@@ -134,6 +144,7 @@ router.get("/", async (req, res) => {
         dernierReleve: dernierReleveParPme[p.id] || null,
         derniereEvaluationAbf: derniereEvaluationParPme[p.id] || null,
         nombreActionsEnRetard: actionsEnRetardParPme[p.id] || 0,
+        typeSuivi: p.typeSuivi,
       }),
     }));
 
@@ -178,7 +189,12 @@ router.get("/:id", async (req, res) => {
 
     res.json({
       ...participant,
-      sante: calculerSanteParticipant({ dernierReleve, derniereEvaluationAbf, nombreActionsEnRetard }),
+      sante: calculerSanteParticipant({
+        dernierReleve,
+        derniereEvaluationAbf,
+        nombreActionsEnRetard,
+        typeSuivi: participant.typeSuivi,
+      }),
     });
   } catch (erreur) {
     console.error(erreur);
@@ -189,8 +205,19 @@ router.get("/:id", async (req, res) => {
 // Création d'un participant.
 router.post("/", async (req, res) => {
   try {
-    const { nom, telephone, email, localite, nomEntreprise, secteurActivite, statut, notes, typeSuivi, filiere } =
-      req.body;
+    const {
+      nom,
+      telephone,
+      email,
+      localite,
+      nomEntreprise,
+      secteurActivite,
+      statut,
+      notes,
+      typeSuivi,
+      filiere,
+      filierePrecision,
+    } = req.body;
 
     if (!nom || !nom.trim()) {
       return res.status(400).json({ error: "Le nom est obligatoire." });
@@ -201,7 +228,7 @@ router.post("/", async (req, res) => {
     if (email && !emailValide(email)) {
       return res.status(400).json({ error: "Format d'email invalide." });
     }
-    const validationType = validerTypeSuiviEtFiliere(typeSuivi, filiere);
+    const validationType = validerTypeSuiviEtFiliere(typeSuivi, filiere, filierePrecision);
     if (!validationType.ok) {
       return res.status(400).json({ error: validationType.erreur });
     }
@@ -218,6 +245,7 @@ router.post("/", async (req, res) => {
         notes: notes || null,
         typeSuivi: validationType.typeSuivi,
         filiere: validationType.filiere,
+        filierePrecision: validationType.filierePrecision,
         creeParId: req.user.userId,
       },
     });
@@ -232,7 +260,18 @@ router.post("/", async (req, res) => {
 // Modification d'un participant.
 router.put("/:id", async (req, res) => {
   try {
-    const { nom, telephone, email, localite, nomEntreprise, secteurActivite, statut, notes, filiere } = req.body;
+    const {
+      nom,
+      telephone,
+      email,
+      localite,
+      nomEntreprise,
+      secteurActivite,
+      statut,
+      notes,
+      filiere,
+      filierePrecision,
+    } = req.body;
 
     if (!nom || !nom.trim()) {
       return res.status(400).json({ error: "Le nom est obligatoire." });
@@ -245,8 +284,9 @@ router.put("/:id", async (req, res) => {
     }
     // Le type de suivi (Generique/Agriculture/Elevage) n'est jamais modifiable après la création
     // (changerait le questionnaire ABF applicable aux évaluations déjà enregistrées) : on ne
-    // revalide/renouvelle que la filière, dans le type de suivi déjà fixé pour ce participant.
-    const validationType = validerTypeSuiviEtFiliere(req.participant.typeSuivi, filiere);
+    // revalide/renouvelle que la filière (et sa précision éventuelle), dans le type de suivi déjà
+    // fixé pour ce participant.
+    const validationType = validerTypeSuiviEtFiliere(req.participant.typeSuivi, filiere, filierePrecision);
     if (!validationType.ok) {
       return res.status(400).json({ error: validationType.erreur });
     }
@@ -263,6 +303,7 @@ router.put("/:id", async (req, res) => {
         statut: statut || "Actif",
         notes: notes || null,
         filiere: validationType.filiere,
+        filierePrecision: validationType.filierePrecision,
       },
     });
 

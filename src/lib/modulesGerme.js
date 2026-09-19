@@ -11,6 +11,16 @@ const MODULES_GERME = [
   { id: "planification", label: "Planifiez pour votre entreprise" },
   { id: "tenue_registres", label: "Tenue des registres" },
 
+  // Modules ajoutés pour couvrir les 5 rubriques du questionnaire ABF générique qui n'avaient
+  // pas encore de module de formation correspondant (voir questionnaireAbf.js : 12 rubriques au
+  // total, "Entreprise et famille" mise à part car ce n'est pas un module de formation à part
+  // entière -- il restait donc 11 rubriques à couvrir, dont seulement 6 avaient un module).
+  { id: "gouvernance", label: "Gouvernance et organisation de l'entreprise" },
+  { id: "finance_tresorerie", label: "Gestion financière et trésorerie" },
+  { id: "juridique_fiscal", label: "Environnement juridique et fiscal" },
+  { id: "numerique_cybersecurite", label: "Outils numériques et cybersécurité" },
+  { id: "risques_resilience", label: "Gestion des risques et résilience" },
+
   // Modules ajoutés pour les participants suivis en Agriculture (voir questionnaireAbfAgriculture.js).
   { id: "itineraire_technique", label: "Techniques culturales et itinéraire technique" },
   { id: "gestion_eau_irrigation", label: "Gestion de l'eau et irrigation" },

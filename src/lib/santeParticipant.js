@@ -4,6 +4,7 @@
 // dernière évaluation ABF, et le nombre d'actions de son plan d'accompagnement en retard.
 const { calculerBeneficeReleve } = require("./calculsFinanciers");
 const { calculerNiveauxAbf } = require("./questionnaireAbf");
+const { obtenirQuestionnaireAbf } = require("./abfParTypeSuivi");
 
 function libelleMoisFr(dateIso) {
   try {
@@ -14,7 +15,7 @@ function libelleMoisFr(dateIso) {
   }
 }
 
-function calculerSanteParticipant({ dernierReleve, derniereEvaluationAbf, nombreActionsEnRetard }) {
+function calculerSanteParticipant({ dernierReleve, derniereEvaluationAbf, nombreActionsEnRetard, typeSuivi = "Generique" }) {
   const alertes = [];
 
   if (dernierReleve) {
@@ -29,7 +30,12 @@ function calculerSanteParticipant({ dernierReleve, derniereEvaluationAbf, nombre
   }
 
   if (derniereEvaluationAbf) {
-    const niveaux = Object.values(calculerNiveauxAbf(derniereEvaluationAbf.reponses))
+    // Le questionnaire ABF (et donc les rubriques/questions attendues dans "reponses") dépend du
+    // type de suivi du participant (Generique/Agriculture/Elevage) : sans ça, un participant
+    // Agriculture ou Elevage n'aurait jamais d'alerte "Diagnostic ABF préoccupant", ses réponses
+    // ne correspondant à aucune rubrique du questionnaire générique utilisé par défaut.
+    const { questionnaire } = obtenirQuestionnaireAbf(typeSuivi);
+    const niveaux = Object.values(calculerNiveauxAbf(derniereEvaluationAbf.reponses, questionnaire))
       .map((n) => n.niveau)
       .filter((n) => n !== null && n !== undefined);
     if (niveaux.length > 0) {

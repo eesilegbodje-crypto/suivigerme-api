@@ -5,7 +5,8 @@
 // volée à partir des données déjà enregistrées (participants, notes, formations, évaluations ABF,
 // relevés mensuels, actions du plan d'accompagnement), toujours filtrées en amont par le compte
 // (creeParId) qui appelle ce calcul — jamais de comparaison entre conseillers.
-const { QUESTIONNAIRE_ABF, calculerNiveauxAbf } = require("./questionnaireAbf");
+const { calculerNiveauxAbf } = require("./questionnaireAbf");
+const { obtenirQuestionnaireAbf } = require("./abfParTypeSuivi");
 const { calculerBeneficeReleve } = require("./calculsFinanciers");
 const { calculerSanteParticipant } = require("./santeParticipant");
 
@@ -78,6 +79,12 @@ function calculerQualiteAccompagnement({ actions }) {
 // récente). actionsParParticipant sert uniquement au calcul du badge de santé (nombre d'actions en
 // retard, propre à chaque PME).
 function calculerResultatsPme({ participantsTous, evaluations, releves, actions }) {
+  // Le questionnaire ABF (et donc les rubriques a utiliser pour lire "reponses") depend du type
+  // de suivi de CHAQUE participant (Generique/Agriculture/Elevage) : indispensable a connaitre ici
+  // pour ne pas ignorer silencieusement la progression des participants Agriculture/Elevage (leurs
+  // reponses ne correspondent a aucune rubrique du questionnaire generique).
+  const typeSuiviParParticipant = new Map(participantsTous.map((p) => [p.id, p.typeSuivi || "Generique"]));
+
   const evalsParParticipant = new Map();
   for (const evaluation of evaluations) {
     if (!evalsParParticipant.has(evaluation.participantId)) {
@@ -87,7 +94,7 @@ function calculerResultatsPme({ participantsTous, evaluations, releves, actions 
   }
 
   const progressionsAbf = [];
-  for (const listeEvals of evalsParParticipant.values()) {
+  for (const [participantId, listeEvals] of evalsParParticipant.entries()) {
     const avant = listeEvals
       .filter((e) => e.moment === "Avant formation")
       .sort((a, b) => new Date(a.dateEvaluation) - new Date(b.dateEvaluation))[0];
@@ -97,8 +104,9 @@ function calculerResultatsPme({ participantsTous, evaluations, releves, actions 
     const apres = apresListe[apresListe.length - 1];
     if (!avant || !apres) continue;
 
+    const { questionnaire } = obtenirQuestionnaireAbf(typeSuiviParParticipant.get(participantId) || "Generique");
     const extraireMoyenneNiveau = (reponses) => {
-      const niveaux = Object.values(calculerNiveauxAbf(reponses))
+      const niveaux = Object.values(calculerNiveauxAbf(reponses, questionnaire))
         .map((n) => n.niveau)
         .filter((n) => n !== null && n !== undefined);
       return moyenne(niveaux);
@@ -153,6 +161,7 @@ function calculerResultatsPme({ participantsTous, evaluations, releves, actions 
       dernierReleve: releveDuParticipant || null,
       derniereEvaluationAbf: evalsDuParticipant || null,
       nombreActionsEnRetard,
+      typeSuivi: participant.typeSuivi,
     });
     repartitionBadges[badge] += 1;
   }

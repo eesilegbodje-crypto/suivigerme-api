@@ -37,7 +37,7 @@ router.get("/", async (req, res) => {
       await Promise.all([
         prisma.participant.findMany({
           where: { creeParId: userId },
-          select: { id: true, statut: true },
+          select: { id: true, statut: true, typeSuivi: true },
         }),
         prisma.noteSuivi.findMany({
           where: {

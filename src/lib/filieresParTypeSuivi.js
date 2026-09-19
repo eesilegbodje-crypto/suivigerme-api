@@ -10,6 +10,10 @@ const FILIERES_AGRICULTURE = [
   { id: "tomate", label: "Tomate" },
   { id: "gombo", label: "Gombo" },
   { id: "aubergine", label: "Aubergine" },
+  // Pour toute culture non listee ci-dessus : le conseiller precise la culture en texte libre
+  // (champ "filierePrecision" du participant). Aucune fiche technique standard n'existe pour ce
+  // choix (voir fichesTechniquesAgriculture.js), l'onglet "Fiche technique" l'indique clairement.
+  { id: "autre", label: "Autre" },
 ];
 
 const FILIERES_ELEVAGE = [

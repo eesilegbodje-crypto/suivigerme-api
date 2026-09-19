@@ -81,6 +81,9 @@ model Participant {
   // Filiere precise au sein du type de suivi (ex. "Mais", "Volaille"...), utilisee pour choisir la
   // bonne fiche technique/prophylaxie. Sans objet pour le type "Generique".
   filiere         String?
+  // Renseigne uniquement quand filiere = "autre" (culture agricole non listee) : precision en
+  // texte libre saisie par le conseiller (ex. "Cacao", "Ananas"). Ignoree/remise a null sinon.
+  filierePrecision String?
   notes           String?
   // Le consultant (compte) qui a enregistre cette PME. Optionnel dans le schema uniquement pour
   // permettre le rattachement des PME creees avant l'existence de ce champ (voir migration) ;

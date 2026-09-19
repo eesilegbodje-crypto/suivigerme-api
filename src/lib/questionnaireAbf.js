@@ -461,7 +461,16 @@ const QUESTIONNAIRE_ABF = [
 // Domaines proposés à la question finale "quels domaines nécessitent une formation ?" — reprend
 // les modules GERME sauf "Entreprise et famille" (ce n'est pas un module de formation à part
 // entière). Le frontend ajoute une case "Autre" en texte libre en plus de cette liste.
-const DOMAINES_BESOIN_FORMATION = MODULES_GERME.filter((m) => m.id !== "entreprise_famille");
+//
+// Important : on ne filtre PAS directement MODULES_GERME (qui contient aussi les modules
+// spécifiques Agriculture/Élevage depuis leur ajout) -- on repart des rubriques du questionnaire
+// générique lui-même, pour que cette liste corresponde toujours exactement aux 12 rubriques
+// ci-dessus (moins "Entreprise et famille"), quel que soit ce qui est ajouté par ailleurs à
+// MODULES_GERME pour d'autres filières.
+const IDS_RUBRIQUES_GENERIQUES = QUESTIONNAIRE_ABF.map((r) => r.rubriqueId).filter(
+  (id) => id !== "entreprise_famille"
+);
+const DOMAINES_BESOIN_FORMATION = MODULES_GERME.filter((m) => IDS_RUBRIQUES_GENERIQUES.includes(m.id));
 
 // Les deux moments proposés pour remplir une évaluation. Champ texte libre en base (pas un enum
 // Prisma) pour rester simple à faire évoluer, mais le frontend ne propose que ces deux choix.
