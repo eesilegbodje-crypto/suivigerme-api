@@ -78,12 +78,23 @@ model Participant {
   // historique, inchange. Les participants crees avant ce champ restent "Generique" par defaut,
   // aucune migration de donnees necessaire.
   typeSuivi       String   @default("Generique") // "Generique" | "Agriculture" | "Elevage"
-  // Filiere precise au sein du type de suivi (ex. "Mais", "Volaille"...), utilisee pour choisir la
-  // bonne fiche technique/prophylaxie. Sans objet pour le type "Generique".
-  filiere         String?
-  // Renseigne uniquement quand filiere = "autre" (culture agricole non listee) : precision en
-  // texte libre saisie par le conseiller (ex. "Cacao", "Ananas"). Ignoree/remise a null sinon.
+  // Filieres precises au sein du type de suivi (ex. ["mais", "tomate"]), utilisees pour choisir
+  // les fiches technique/prophylaxie a afficher. Un participant peut cumuler plusieurs activites
+  // (ex. un agriculteur qui fait a la fois mais ET tomate) -- liste (pas une valeur unique), vide
+  // pour le type "Generique". Remplace l'ancien champ "filiere" (String? unique).
+  filieres        String[] @default([])
+  // Renseigne uniquement quand filieres contient "autre" (activite(s) non listee(s), Agriculture
+  // ou Elevage) : precision en texte libre saisie par le conseiller, une ou plusieurs activites
+  // separees par une virgule (ex. "Cacao, Café"). Ignoree/remise a null si "autre" n'est pas
+  // selectionne.
   filierePrecision String?
+  // Fiches technique/prophylaxie generees automatiquement par IA pour les activites qui n'ont pas
+  // de fiche standard (typiquement celles listees via "autre") : un objet {cle: fiche}, une entree
+  // par activite generee, mis en cache ici pour ne regenerer qu'a la demande ("Regenerer") plutot
+  // qu'a chaque ouverture de l'onglet. Sans objet (toujours null) si aucune activite de ce
+  // participant n'a eu besoin de generation IA, ou pour le type "Generique".
+  ficheReferenceIa       Json?
+  ficheReferenceGenereeLe DateTime?
   notes           String?
   // Le consultant (compte) qui a enregistre cette PME. Optionnel dans le schema uniquement pour
   // permettre le rattachement des PME creees avant l'existence de ce champ (voir migration) ;

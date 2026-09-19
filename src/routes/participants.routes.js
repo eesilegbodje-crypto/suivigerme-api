@@ -6,6 +6,7 @@ const { obtenirQuestionnaireAbf, TYPES_SUIVI_VALIDES } = require("../lib/abfParT
 const { filieresPourTypeSuivi } = require("../lib/filieresParTypeSuivi");
 const { FICHES_TECHNIQUES_AGRICULTURE } = require("../lib/fichesTechniquesAgriculture");
 const { FICHES_PROPHYLAXIE_ELEVAGE } = require("../lib/fichesProphylaxieElevage");
+const { genererFicheTechniqueParIa, genererFicheProphylaxieParIa } = require("../lib/generationFicheIa");
 const { genererJSON } = require("../lib/aiService");
 const { calculerBeneficeReleve, calculerEstimationCout } = require("../lib/calculsFinanciers");
 const { calculerSanteParticipant } = require("../lib/santeParticipant");
@@ -51,32 +52,36 @@ function emailValide(email) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
 
-// Vérifie la cohérence typeSuivi/filiere/filierePrecision : un type "Generique" n'a ni filière ni
-// précision (toujours ramenées à null), un type Agriculture/Elevage doit avoir une filière valide
-// parmi celles proposées pour ce type (voir filieresParTypeSuivi.js), et la filière spéciale
-// "autre" (Agriculture uniquement pour l'instant) exige en plus une précision en texte libre
-// (la culture n'étant dans aucune fiche technique standard). Retourne soit
-// { ok: true, filiere, filierePrecision }, soit { ok: false, erreur } pour un message clair.
-function validerTypeSuiviEtFiliere(typeSuivi, filiere, filierePrecision) {
+// Vérifie la cohérence typeSuivi/filieres/filierePrecision : un type "Generique" n'a aucune
+// filière ni précision (toujours ramenées à liste vide/null), un type Agriculture/Elevage doit
+// avoir AU MOINS UNE filière valide parmi celles proposées pour ce type (voir
+// filieresParTypeSuivi.js) -- un participant peut cumuler plusieurs activités (ex. maïs ET
+// tomate) -- et la filière spéciale "autre" exige en plus une précision en texte libre (une ou
+// plusieurs activités séparées par une virgule, aucune fiche standard n'existant pour elles).
+// Retourne soit { ok: true, filieres, filierePrecision }, soit { ok: false, erreur } pour un
+// message clair.
+function validerTypeSuiviEtFilieres(typeSuivi, filieres, filierePrecision) {
   const type = typeSuivi || "Generique";
   if (!TYPES_SUIVI_VALIDES.includes(type)) {
     return { ok: false, erreur: "Type de suivi inconnu." };
   }
   if (type === "Generique") {
-    return { ok: true, typeSuivi: type, filiere: null, filierePrecision: null };
+    return { ok: true, typeSuivi: type, filieres: [], filierePrecision: null };
   }
+  const listeDemandee = Array.isArray(filieres) ? filieres : [];
+  const filieresUniques = [...new Set(listeDemandee)];
   const filieresValides = filieresPourTypeSuivi(type).map((f) => f.id);
-  if (!filiere || !filieresValides.includes(filiere)) {
-    return { ok: false, erreur: "Merci de choisir une filière valide pour ce type de suivi." };
+  if (filieresUniques.length === 0 || filieresUniques.some((f) => !filieresValides.includes(f))) {
+    return { ok: false, erreur: "Merci de choisir au moins une filière valide pour ce type de suivi." };
   }
-  if (filiere === "autre" && !(filierePrecision || "").trim()) {
-    return { ok: false, erreur: "Merci de préciser la culture pour la filière \"Autre\"." };
+  if (filieresUniques.includes("autre") && !(filierePrecision || "").trim()) {
+    return { ok: false, erreur: "Merci de préciser la ou les activité(s) pour la filière \"Autre\"." };
   }
   return {
     ok: true,
     typeSuivi: type,
-    filiere,
-    filierePrecision: filiere === "autre" ? filierePrecision.trim() : null,
+    filieres: filieresUniques,
+    filierePrecision: filieresUniques.includes("autre") ? filierePrecision.trim() : null,
   };
 }
 
@@ -215,7 +220,7 @@ router.post("/", async (req, res) => {
       statut,
       notes,
       typeSuivi,
-      filiere,
+      filieres,
       filierePrecision,
     } = req.body;
 
@@ -228,7 +233,7 @@ router.post("/", async (req, res) => {
     if (email && !emailValide(email)) {
       return res.status(400).json({ error: "Format d'email invalide." });
     }
-    const validationType = validerTypeSuiviEtFiliere(typeSuivi, filiere, filierePrecision);
+    const validationType = validerTypeSuiviEtFilieres(typeSuivi, filieres, filierePrecision);
     if (!validationType.ok) {
       return res.status(400).json({ error: validationType.erreur });
     }
@@ -244,7 +249,7 @@ router.post("/", async (req, res) => {
         statut: statut || "Actif",
         notes: notes || null,
         typeSuivi: validationType.typeSuivi,
-        filiere: validationType.filiere,
+        filieres: validationType.filieres,
         filierePrecision: validationType.filierePrecision,
         creeParId: req.user.userId,
       },
@@ -269,7 +274,7 @@ router.put("/:id", async (req, res) => {
       secteurActivite,
       statut,
       notes,
-      filiere,
+      filieres,
       filierePrecision,
     } = req.body;
 
@@ -284,13 +289,17 @@ router.put("/:id", async (req, res) => {
     }
     // Le type de suivi (Generique/Agriculture/Elevage) n'est jamais modifiable après la création
     // (changerait le questionnaire ABF applicable aux évaluations déjà enregistrées) : on ne
-    // revalide/renouvelle que la filière (et sa précision éventuelle), dans le type de suivi déjà
-    // fixé pour ce participant.
-    const validationType = validerTypeSuiviEtFiliere(req.participant.typeSuivi, filiere, filierePrecision);
+    // revalide/renouvelle que les filières (et leur précision éventuelle), dans le type de suivi
+    // déjà fixé pour ce participant.
+    const validationType = validerTypeSuiviEtFilieres(req.participant.typeSuivi, filieres, filierePrecision);
     if (!validationType.ok) {
       return res.status(400).json({ error: validationType.erreur });
     }
 
+    // Pas besoin de vider le cache "ficheReferenceIa" ici : il est indexé par activité (une clé
+    // par filière/précision), donc retirer ou renommer une activité laisse simplement une entrée
+    // orpheline sans conséquence, et une activité nouvelle ou renommée sera générée à la volée à
+    // la prochaine ouverture de l'onglet (voir fournirFichesReference ci-dessous).
     const participant = await prisma.participant.update({
       where: { id: req.params.id },
       data: {
@@ -302,7 +311,7 @@ router.put("/:id", async (req, res) => {
         secteurActivite: secteurActivite || null,
         statut: statut || "Actif",
         notes: notes || null,
-        filiere: validationType.filiere,
+        filieres: validationType.filieres,
         filierePrecision: validationType.filierePrecision,
       },
     });
@@ -630,27 +639,99 @@ router.get("/:id/performance", async (req, res) => {
   }
 });
 
-// Fiche de référence (contenu statique, pas stocké en base) associée à la filière du
-// participant : fiche technique pour un participant Agriculture, fiche de prophylaxie pour un
-// participant Élevage. Rien à renvoyer pour un participant Générique ou sans filière renseignée.
+// Fiches de référence associées aux filières du participant (potentiellement PLUSIEURS : un
+// participant peut cumuler plusieurs activités, ex. maïs ET tomate) : fiche technique pour un
+// participant Agriculture, fiche de prophylaxie pour un participant Élevage. Une entrée par
+// activité, avec deux sources possibles chacune :
+// - "standard" : contenu fixe rédigé une fois pour toutes (fichesTechniquesAgriculture.js /
+//   fichesProphylaxieElevage.js), renvoyé instantanément, pour les filières connues.
+// - "ia" : quand aucune fiche standard n'existe pour l'activité (toujours le cas pour "autre",
+//   dont chaque activité précisée en texte libre -- une ou plusieurs, séparées par une virgule --
+//   devient sa propre entrée) -- générée automatiquement par IA à la première consultation de
+//   l'onglet (le conseiller n'a jamais besoin de cliquer sur un bouton "Générer"), puis mise en
+//   cache (une clé par activité) pour ne pas la regénérer à chaque lecture.
+async function fournirFichesReference(req, res, { forcerRegeneration = false } = {}) {
+  const { typeSuivi, filieres, filierePrecision } = req.participant;
+
+  if (!filieres || filieres.length === 0 || typeSuivi === "Generique") {
+    return res.json({ fiches: [] });
+  }
+
+  const estAgriculture = typeSuivi === "Agriculture";
+  const type = estAgriculture ? "technique" : "prophylaxie";
+  const bibliothequeStandard = estAgriculture ? FICHES_TECHNIQUES_AGRICULTURE : FICHES_PROPHYLAXIE_ELEVAGE;
+
+  // Une filière standard = une activité. "autre" peut en représenter PLUSIEURS à la fois si le
+  // conseiller a listé plusieurs cultures/espèces séparées par une virgule dans la précision.
+  const activites = [];
+  for (const id of filieres) {
+    if (id === "autre") {
+      const noms = (filierePrecision || "")
+        .split(/[,;]/)
+        .map((n) => n.trim())
+        .filter(Boolean);
+      for (const nom of noms) {
+        activites.push({ cle: `autre:${nom.toLowerCase()}`, label: nom, standard: null });
+      }
+    } else {
+      activites.push({ cle: id, label: bibliothequeStandard[id]?.label || id, standard: bibliothequeStandard[id] || null });
+    }
+  }
+
+  if (activites.length === 0) {
+    return res.json({ type, fiches: [] });
+  }
+
+  try {
+    const cache = { ...(req.participant.ficheReferenceIa || {}) };
+    let cacheModifie = false;
+    const fiches = [];
+
+    for (const activite of activites) {
+      if (activite.standard) {
+        fiches.push({ cle: activite.cle, label: activite.label, source: "standard", fiche: activite.standard });
+        continue;
+      }
+      if (!forcerRegeneration && cache[activite.cle]) {
+        fiches.push({ cle: activite.cle, label: activite.label, source: "ia", fiche: cache[activite.cle] });
+        continue;
+      }
+      try {
+        const fiche = estAgriculture
+          ? await genererFicheTechniqueParIa(activite.label)
+          : await genererFicheProphylaxieParIa(activite.label);
+        cache[activite.cle] = fiche;
+        cacheModifie = true;
+        fiches.push({ cle: activite.cle, label: activite.label, source: "ia", fiche });
+      } catch (erreurGeneration) {
+        console.error(erreurGeneration);
+        fiches.push({ cle: activite.cle, label: activite.label, source: "erreur", fiche: null });
+      }
+    }
+
+    if (cacheModifie) {
+      await prisma.participant.update({
+        where: { id: req.params.id },
+        data: { ficheReferenceIa: cache, ficheReferenceGenereeLe: new Date() },
+      });
+    }
+
+    res.json({ type, fiches });
+  } catch (erreur) {
+    console.error(erreur);
+    res.status(500).json({ error: "La génération automatique des fiches est momentanément indisponible." });
+  }
+}
+
 router.get("/:id/fiche-reference", (req, res) => {
-  const { typeSuivi, filiere } = req.participant;
+  fournirFichesReference(req, res);
+});
 
-  if (!filiere) {
-    return res.json({ fiche: null });
-  }
-
-  if (typeSuivi === "Agriculture") {
-    const fiche = FICHES_TECHNIQUES_AGRICULTURE[filiere] || null;
-    return res.json({ type: "technique", filiere, fiche });
-  }
-
-  if (typeSuivi === "Elevage") {
-    const fiche = FICHES_PROPHYLAXIE_ELEVAGE[filiere] || null;
-    return res.json({ type: "prophylaxie", filiere, fiche });
-  }
-
-  res.json({ fiche: null });
+// Regénère par IA les fiches qui en avaient besoin (celles issues de "autre"), même si une
+// version était déjà en cache (bouton "Régénérer" côté frontend) -- ne touche jamais les fiches
+// "standard", qui n'ont pas de raison de changer.
+router.post("/:id/fiche-reference/regenerer", (req, res) => {
+  fournirFichesReference(req, res, { forcerRegeneration: true });
 });
 
 // Génère (ou régénère) le diagnostic IA d'une évaluation ABF : problèmes identifiés, formations à

@@ -19,6 +19,11 @@ const FILIERES_AGRICULTURE = [
 const FILIERES_ELEVAGE = [
   { id: "volaille", label: "Volaille" },
   { id: "petits_ruminants_bovins", label: "Petits ruminants et bovins" },
+  // Pour toute espece/activite non listee ci-dessus (ex. porcs, lapins, apiculture...) : le
+  // conseiller precise l'activite en texte libre (champ "filierePrecision" du participant).
+  // Aucune fiche de prophylaxie standard n'existe pour ce choix -- une fiche est alors generee
+  // automatiquement par IA au premier affichage de l'onglet (voir generationFicheIa.js).
+  { id: "autre", label: "Autre" },
 ];
 
 function filieresPourTypeSuivi(typeSuivi) {
